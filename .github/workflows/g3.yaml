@@ -2,7 +2,7 @@ name: Build g3 Docker Images
 
 on:
   schedule:
-    # Run daily at midnight UTC
+    # Run weekly on Sunday at midnight UTC
     - cron: "0 0 * * 0"
   # Allow manual triggering
   workflow_dispatch:
@@ -30,31 +30,35 @@ jobs:
       - name: Get latest tag for ${{ matrix.app }}
         id: get-tag
         run: |
-          # Fetch all tags from the g3 repository
-          TAGS=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+
+          TAGS_JSON=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/bytedance/g3/tags?per_page=100")
 
-          # Filter tags for the specific app and extract version
-          LATEST_TAG=$(echo "$TAGS" | grep -o '"name":"'"${{ matrix.app }}"'-v[0-9]\+\.[0-9]\+\.[0-9]\+"' | head -1 | cut -d'"' -f4)
+          MATCHING_TAGS=$(echo "$TAGS_JSON" | jq -r --arg app "${{ matrix.app }}" '.[] | select(.name | startswith($app + "-v")) | .name')
 
-          if [ -z "$LATEST_TAG" ]; then
-            echo "No tag found for ${{ matrix.app }}"
+          if [ -z "$MATCHING_TAGS" ]; then
+            echo "No tags found matching pattern '${{ matrix.app }}-v*'"
+            echo "$TAGS_JSON" | jq -r '.[] | .name'
             exit 1
           fi
+
+          # Get the first (latest) matching tag
+          LATEST_TAG=$(echo "$MATCHING_TAGS" | head -1)
+          echo "Matching tags found:"
+          echo "$MATCHING_TAGS"
 
           # Extract version (remove app prefix)
           VERSION=$(echo "$LATEST_TAG" | sed "s/${{ matrix.app }}-v//")
           echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_OUTPUT
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "IMAGE_NAME=${{ github.repository_owner }}/${{ matrix.app }}" >> $GITHUB_OUTPUT
-          echo "Found tag: $LATEST_TAG, version: $VERSION"
+          echo "Found latest tag: $LATEST_TAG, version: $VERSION"
 
       - name: Check if image version exists in GHCR
         id: check-image
         run: |
           # Try to pull the image with version tag
-          echo "Checking if ghcr.io/builds/${{ steps.get-tag.outputs.IMAGE_NAME }}:${{ steps.get-tag.outputs.VERSION }} exists..."
-          if docker manifest inspect ghcr.io/builds/${{ steps.get-tag.outputs.IMAGE_NAME }}:${{ steps.get-tag.outputs.VERSION }} >/dev/null 2>&1; then
+          echo "Checking if ghcr.io/builds/${{ github.repository_owner }}/${{ matrix.app }}:${{ steps.get-tag.outputs.VERSION }} exists..."
+          if docker manifest inspect ghcr.io/builds/${{ github.repository_owner }}/${{ matrix.app }}:${{ steps.get-tag.outputs.VERSION }} >/dev/null 2>&1; then
             echo "Image already exists in GHCR"
             echo "SKIP_BUILD=true" >> $GITHUB_OUTPUT
           else
@@ -97,8 +101,8 @@ jobs:
           file: g3proxy/docker/lua.alpine.Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/g3proxy:latest-lua
-            ghcr.io/${{ github.repository_owner }}/g3proxy:${{ steps.get-tag.outputs.VERSION }}-lua
+            ghcr.io/builds/${{ github.repository_owner }}/g3proxy:latest-lua
+            ghcr.io/builds/${{ github.repository_owner }}/g3proxy:${{ steps.get-tag.outputs.VERSION }}-lua
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
