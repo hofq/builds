@@ -1,0 +1,108 @@
+name: Build g3 Docker Images
+
+on:
+  schedule:
+    # Run daily at midnight UTC
+    - cron: "0 0 * * 0"
+  # Allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  build-images:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [g3proxy, g3iploc, g3fcgen]
+    steps:
+      - name: Checkout this repo (pipeline repo)
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get latest tag for ${{ matrix.app }}
+        id: get-tag
+        run: |
+          # Fetch all tags from the g3 repository
+          TAGS=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/bytedance/g3/tags?per_page=100")
+
+          # Filter tags for the specific app and extract version
+          LATEST_TAG=$(echo "$TAGS" | grep -o '"name":"'"${{ matrix.app }}"'-v[0-9]\+\.[0-9]\+\.[0-9]\+"' | head -1 | cut -d'"' -f4)
+
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No tag found for ${{ matrix.app }}"
+            exit 1
+          fi
+
+          # Extract version (remove app prefix)
+          VERSION=$(echo "$LATEST_TAG" | sed "s/${{ matrix.app }}-v//")
+          echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "IMAGE_NAME=${{ github.repository_owner }}/${{ matrix.app }}" >> $GITHUB_OUTPUT
+          echo "Found tag: $LATEST_TAG, version: $VERSION"
+
+      - name: Check if image version exists in GHCR
+        id: check-image
+        run: |
+          # Try to pull the image with version tag
+          echo "Checking if ghcr.io/builds/${{ steps.get-tag.outputs.IMAGE_NAME }}:${{ steps.get-tag.outputs.VERSION }} exists..."
+          if docker manifest inspect ghcr.io/builds/${{ steps.get-tag.outputs.IMAGE_NAME }}:${{ steps.get-tag.outputs.VERSION }} >/dev/null 2>&1; then
+            echo "Image already exists in GHCR"
+            echo "SKIP_BUILD=true" >> $GITHUB_OUTPUT
+          else
+            echo "Image does not exist, will build"
+            echo "SKIP_BUILD=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push ${{ matrix.app }} alpine image
+        if: steps.check-image.outputs.SKIP_BUILD == 'false'
+        uses: docker/build-push-action@v5
+        with:
+          context: https://github.com/bytedance/g3.git#${{ steps.get-tag.outputs.LATEST_TAG }}
+          file: ${{ matrix.app }}/docker/alpine.Dockerfile
+          push: true
+          tags: |
+            ghcr.io/builds/${{ github.repository_owner }}/${{ matrix.app }}:latest
+            ghcr.io/builds/${{ github.repository_owner }}/${{ matrix.app }}:${{ steps.get-tag.outputs.VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Special case for g3proxy lua.alpine variant
+      - name: Check if g3proxy-lua image exists in GHCR
+        if: matrix.app == 'g3proxy'
+        id: check-lua-image
+        run: |
+          echo "Checking if ghcr.io/builds/${{ github.repository_owner }}/g3proxy:${{ steps.get-tag.outputs.VERSION }}-lua exists..."
+          if docker manifest inspect ghcr.io/builds/${{ github.repository_owner }}/g3proxy:${{ steps.get-tag.outputs.VERSION }}-lua >/dev/null 2>&1; then
+            echo "Image already exists in GHCR"
+            echo "SKIP_LUA_BUILD=true" >> $GITHUB_OUTPUT
+          else
+            echo "Image does not exist, will build"
+            echo "SKIP_LUA_BUILD=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push g3proxy lua.alpine image
+        if: matrix.app == 'g3proxy' && steps.check-lua-image.outputs.SKIP_LUA_BUILD == 'false'
+        uses: docker/build-push-action@v5
+        with:
+          context: https://github.com/bytedance/g3.git#${{ steps.get-tag.outputs.LATEST_TAG }}
+          file: g3proxy/docker/lua.alpine.Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/g3proxy:latest-lua
+            ghcr.io/${{ github.repository_owner }}/g3proxy:${{ steps.get-tag.outputs.VERSION }}-lua
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Skip build notification
+        if: steps.check-image.outputs.SKIP_BUILD == 'true'
+        run: |
+          echo "Skipping build for ${{ matrix.app }}:${{ steps.get-tag.outputs.VERSION }} - already exists in GHCR"
