@@ -57,8 +57,8 @@ jobs:
         id: check-image
         run: |
           # Try to pull the image with version tag
-          echo "Checking if ghcr.io/builds/${{ github.repository_owner }}/${{ matrix.app }}:${{ steps.get-tag.outputs.VERSION }} exists..."
-          if docker manifest inspect ghcr.io/builds/${{ github.repository_owner }}/${{ matrix.app }}:${{ steps.get-tag.outputs.VERSION }} >/dev/null 2>&1; then
+          echo "Checking if ghcr.io/${{ github.repository_owner }}´/builds/${{ matrix.app }}:${{ steps.get-tag.outputs.VERSION }} exists..."
+          if docker manifest inspect ghcr.io/${{ github.repository_owner }}/builds/${{ matrix.app }}:${{ steps.get-tag.outputs.VERSION }} >/dev/null 2>&1; then
             echo "Image already exists in GHCR"
             echo "SKIP_BUILD=true" >> $GITHUB_OUTPUT
           else
@@ -74,8 +74,8 @@ jobs:
           file: ${{ matrix.app }}/docker/alpine.Dockerfile
           push: true
           tags: |
-            ghcr.io/builds/${{ github.repository_owner }}/${{ matrix.app }}:latest
-            ghcr.io/builds/${{ github.repository_owner }}/${{ matrix.app }}:${{ steps.get-tag.outputs.VERSION }}
+            ghcr.io/${{ github.repository_owner }}/builds/${{ matrix.app }}:latest
+            ghcr.io/${{ github.repository_owner }}/builds/${{ matrix.app }}:${{ steps.get-tag.outputs.VERSION }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -84,8 +84,8 @@ jobs:
         if: matrix.app == 'g3proxy'
         id: check-lua-image
         run: |
-          echo "Checking if ghcr.io/builds/${{ github.repository_owner }}/g3proxy:${{ steps.get-tag.outputs.VERSION }}-lua exists..."
-          if docker manifest inspect ghcr.io/builds/${{ github.repository_owner }}/g3proxy:${{ steps.get-tag.outputs.VERSION }}-lua >/dev/null 2>&1; then
+          echo "Checking if ghcr.io/${{ github.repository_owner }}/builds/g3proxy:${{ steps.get-tag.outputs.VERSION }}-lua exists..."
+          if docker manifest inspect ghcr.io/${{ github.repository_owner }}/builds/g3proxy:${{ steps.get-tag.outputs.VERSION }}-lua >/dev/null 2>&1; then
             echo "Image already exists in GHCR"
             echo "SKIP_LUA_BUILD=true" >> $GITHUB_OUTPUT
           else
@@ -101,8 +101,8 @@ jobs:
           file: g3proxy/docker/lua.alpine.Dockerfile
           push: true
           tags: |
-            ghcr.io/builds/${{ github.repository_owner }}/g3proxy:latest-lua
-            ghcr.io/builds/${{ github.repository_owner }}/g3proxy:${{ steps.get-tag.outputs.VERSION }}-lua
+            ghcr.io/${{ github.repository_owner }}/builds/g3proxy:latest-lua
+            ghcr.io/${{ github.repository_owner }}/builds/g3proxy:${{ steps.get-tag.outputs.VERSION }}-lua
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
