@@ -11,6 +11,7 @@ jobs:
   build-images:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         app: [g3proxy, g3iploc, g3fcgen]
     steps:
@@ -34,21 +35,20 @@ jobs:
           TAGS_JSON=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/bytedance/g3/tags?per_page=100")
 
-          MATCHING_TAGS=$(echo "$TAGS_JSON" | jq -r --arg app "${{ matrix.app }}" '.[] | select(.name | startswith($app + "-v")) | .name')
+          MATCHING_TAGS=$(echo "$TAGS_JSON" | jq -r --arg app "${{ matrix.app }}" '.[] | select(.name | startswith($app + "-")) | .name')
 
           if [ -z "$MATCHING_TAGS" ]; then
-            echo "No tags found matching pattern '${{ matrix.app }}-v*'"
+            echo "No tags found matching pattern '${{ matrix.app }}-*'"
             echo "$TAGS_JSON" | jq -r '.[] | .name'
             exit 1
           fi
 
           # Get the first (latest) matching tag
           LATEST_TAG=$(echo "$MATCHING_TAGS" | head -1)
-          echo "Matching tags found:"
-          echo "$MATCHING_TAGS"
+          echo "Tag: $MATCHING_TAGS"
 
           # Extract version (remove app prefix)
-          VERSION=$(echo "$LATEST_TAG" | sed "s/${{ matrix.app }}-v//")
+          VERSION=$(echo "$LATEST_TAG" | sed "s/${{ matrix.app }}-//")
           echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_OUTPUT
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Found latest tag: $LATEST_TAG, version: $VERSION"
